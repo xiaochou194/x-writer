@@ -419,6 +419,7 @@ async function callAPI(apiKey, system, prompt, model) {
       "content-type": "application/json",
       "anthropic-version": "2023-06-01",
       "x-api-key": apiKey,
+      "anthropic-dangerous-direct-browser-access": "true",
     },
     body: JSON.stringify({
       model: model,
