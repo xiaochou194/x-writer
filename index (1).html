@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>X 内容工作台</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F9F8F6; --surface: #FFFFFF; --border: #E5E3DF;
+    --text: #1A1917; --sub: #6B6860; --muted: #A8A59F; --faint: #C8C5BF;
+    --accent: #CC785C; --soft: #F5EDE8; --sidebar: #F3F2EF;
+    --blue: #4A90D9; --green: #4CAF7D; --amber: #D4882A; --red: #C0392B;
+    --xblue: #1D9BF0;
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Georgia','Noto Serif SC',serif; min-height: 100vh; display: flex; flex-direction: column; }
+  button { font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  button:disabled { opacity: .45; cursor: default; }
+  input { font-family: inherit; }
+  input::placeholder { color: var(--faint); }
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::selection { background: var(--soft); color: var(--text); }
+
+  /* Layout */
+  #header { position: sticky; top: 0; z-index: 100; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; }
+  #logo { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  #header-title { font-size: 15px; font-weight: 500; letter-spacing: -.2px; }
+  #header-sub { font-size: 11px; color: var(--muted); font-family: system-ui,sans-serif; }
+  #status-pill { display: none; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-family: system-ui,sans-serif; font-weight: 500; }
+
+  #body { flex: 1; overflow: auto; }
+  .tab-content { max-width: 680px; margin: 0 auto; padding: 20px 20px 80px; }
+
+  /* Section cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+  .card-label { font-size: 11px; font-family: system-ui,sans-serif; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { flex: 1; min-width: 70px; padding: 9px 8px; border-radius: 9px; border: 1px solid var(--border); background: transparent; color: var(--sub); font-size: 13px; cursor: pointer; transition: all .15s; text-align: center; line-height: 1.3; }
+  .chip.active { border-color: var(--accent); background: var(--soft); color: var(--accent); font-weight: 500; }
+  .chip-sub { font-size: 10px; color: var(--faint); display: block; margin-top: 2px; }
+  .chip.active .chip-sub { color: var(--accent); }
+
+  /* Input */
+  #keyword-input { width: 100%; padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 15px; outline: none; transition: border-color .15s; }
+  #keyword-input:focus { border-color: var(--accent); }
+
+  /* API Key input */
+  #apikey-wrap { background: #FFF8F5; border: 1px solid #F5D0C0; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  #apikey-wrap label { font-size: 12px; color: var(--accent); font-family: system-ui,sans-serif; font-weight: 600; display: block; margin-bottom: 8px; }
+  #apikey-input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font-size: 13px; font-family: monospace; outline: none; }
+  #apikey-hint { font-size: 11px; color: var(--muted); font-family: system-ui,sans-serif; margin-top: 6px; }
+
+  /* Buttons */
+  #btn-generate { width: 100%; padding: 14px; border-radius: 12px; border: none; background: var(--accent); color: #fff; font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; transition: all .15s; }
+  #btn-generate:disabled { background: var(--border); color: var(--muted); }
+  #btn-random { width: 100%; padding: 13px; border-radius: 12px; border: 1px solid var(--border); background: transparent; color: var(--sub); font-size: 15px; transition: all .15s; }
+
+  /* Spinner */
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+  .spinner.dark { border-color: rgba(0,0,0,.15); border-top-color: var(--muted); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+  @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+  /* Error */
+  #error-box { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: #FEF2F2; border: 1px solid #FECACA; color: var(--red); font-size: 14px; font-family: system-ui,sans-serif; line-height: 1.6; }
+
+  /* Loading */
+  #loading-box { display: none; margin-top: 16px; align-items: center; gap: 10px; color: var(--sub); font-size: 14px; font-family: system-ui,sans-serif; }
+  .spinner-accent { width: 16px; height: 16px; border: 2px solid rgba(204,120,92,.25); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+
+  /* Draft card */
+  #draft-card { display: none; margin-top: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; animation: fadeUp .3s ease; }
+  .tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-family: system-ui,sans-serif; }
+  #draft-tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  #char-count { margin-left: auto; font-size: 12px; font-family: system-ui,sans-serif; }
+  #draft-text { font-size: 16px; line-height: 2.05; color: var(--text); white-space: pre-wrap; letter-spacing: .2px; }
+  #draft-actions { display: flex; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  #draft-actions button { flex: 1; padding: 10px 6px; border-radius: 9px; font-size: 13px; font-family: system-ui,sans-serif; transition: all .15s; }
+  #btn-copy { border: none; background: var(--accent); color: #fff; font-weight: 500; }
+  #btn-copy.copied { background: var(--green); }
+  #btn-post-x { border: none; background: var(--xblue); color: #fff; font-weight: 500; }
+  #btn-regen { border: 1px solid var(--border); background: transparent; color: var(--sub); }
+
+  /* History */
+  #history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  #history-title { font-size: 16px; font-weight: 500; }
+  #history-count { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 8px; font-family: system-ui,sans-serif; }
+  #btn-clear { font-size: 13px; background: none; border: 1px solid #FECACA; border-radius: 8px; padding: 5px 12px; color: var(--red); font-family: system-ui,sans-serif; transition: all .2s; }
+  #btn-clear.confirm { background: var(--red); color: #fff; border-color: var(--red); }
+  #history-empty { text-align: center; padding: 60px 0; color: var(--muted); font-size: 14px; font-family: system-ui,sans-serif; line-height: 1.8; }
+  .hist-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .hist-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .hist-item-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+  .hist-item-time { font-size: 11px; color: var(--muted); font-family: system-ui,sans-serif; }
+  .hist-item-text { font-size: 14px; color: var(--sub); line-height: 1.65; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; margin-bottom: 10px; }
+  .hist-actions { display: flex; gap: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .hist-actions button { flex: 1; padding: 8px; border-radius: 8px; font-size: 12px; font-family: system-ui,sans-serif; transition: all .15s; }
+  .hist-btn-copy { border: 1px solid var(--border); background: transparent; color: var(--sub); }
+  .hist-btn-x { border: none; background: var(--xblue); color: #fff; font-weight: 500; }
+  .hist-btn-del { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 14px; }
+
+  /* Bottom nav */
+  #nav { position: sticky; bottom: 0; height: 56px; background: var(--surface); border-top: 1px solid var(--border); display: flex; flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+  /* iOS safe area */
+  .tab-content { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  /* Mobile touch improvements */
+  @media (max-width: 600px) {
+    .tab-content { padding: 16px 14px calc(80px + env(safe-area-inset-bottom)); }
+    .card { padding: 14px; border-radius: 12px; margin-bottom: 10px; }
+    .chip { padding: 10px 6px; font-size: 13px; min-width: 60px; }
+    #keyword-input { font-size: 16px; padding: 13px 14px; } /* 16px prevents iOS zoom */
+    #apikey-input { font-size: 16px; } /* same */
+    #btn-generate { padding: 15px; font-size: 16px; }
+    #btn-random { padding: 14px; font-size: 15px; }
+    #draft-text { font-size: 15px; line-height: 2; }
+    #draft-actions button { padding: 12px 6px; font-size: 13px; }
+    .hist-actions button { padding: 10px; font-size: 13px; }
+    .nav-btn { min-height: 56px; }
+    .nav-btn-icon { font-size: 22px; }
+    .nav-btn-label { font-size: 11px; }
+  }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: transparent; color: var(--muted); transition: color .15s; -webkit-tap-highlight-color: transparent; }
+  .nav-btn.active { color: var(--accent); }
+  .nav-btn-icon { font-size: 20px; line-height: 1; }
+  .nav-btn-label { font-size: 10px; font-weight: 500; font-family: system-ui,sans-serif; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div id="logo">X</div>
+    <div>
+      <div id="header-title">内容工作台</div>
+      <div id="header-sub" id="header-sub"></div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div id="status-pill"></div>
+    <span id="header-count" style="font-size:11px;color:var(--muted);font-family:system-ui,sans-serif;display:none"></span>
+  </div>
+</div>
+
+<!-- Body -->
+<div id="body">
+
+  <!-- Write Tab -->
+  <div id="tab-write" class="tab-content">
+
+    <!-- API Key -->
+    <div id="apikey-wrap">
+      <label>🔑 Anthropic API Key</label>
+      <input id="apikey-input" type="password" placeholder="sk-ant-..." autocomplete="off" />
+      <div id="apikey-hint">Key 仅保存在你的浏览器本地，不会上传到任何地方</div>
+    </div>
+
+    <!-- Topic -->
+    <div class="card">
+      <div class="card-label">主题</div>
+      <div class="chip-row" id="topic-chips"></div>
+    </div>
+
+    <!-- Length -->
+    <div class="card">
+      <div class="card-label">字数</div>
+      <div class="chip-row" id="length-chips"></div>
+    </div>
+
+    <!-- Model -->
+    <div class="card">
+      <div class="card-label">模型</div>
+      <div class="chip-row" id="model-chips"></div>
+    </div>
+
+    <!-- Keyword -->
+    <div class="card">
+      <div class="card-label">关键词（可选）</div>
+      <input id="keyword-input" type="text" placeholder="留空 = 自动选题，填写则围绕关键词生成" />
+    </div>
+
+    <!-- Buttons -->
+    <button id="btn-generate">生成内容</button>
+    <button id="btn-random">随手写一篇</button>
+
+    <!-- States -->
+    <div id="error-box"></div>
+    <div id="loading-box"><div class="spinner-accent"></div><span>正在生成内容…</span></div>
+
+    <!-- Draft -->
+    <div id="draft-card">
+      <div id="draft-tags"></div>
+      <div id="draft-text"></div>
+      <div id="draft-actions">
+        <button id="btn-copy">复制</button>
+        <button id="btn-post-x">发布到 X</button>
+        <button id="btn-regen">重新生成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Tab -->
+  <div id="tab-history" class="tab-content" style="display:none">
+    <div id="history-header">
+      <div id="history-title">历史记录<span id="history-count"></span></div>
+      <button id="btn-clear" style="display:none">清空</button>
+    </div>
+    <div id="history-empty" style="display:none">还没有历史记录<br>去生成一篇试试 ✦</div>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<!-- Bottom Nav -->
+<div id="nav">
+  <button class="nav-btn active" id="nav-write" onclick="switchTab('write')">
+    <span class="nav-btn-icon">✦</span>
+    <span class="nav-btn-label">写作</span>
+  </button>
+  <button class="nav-btn" id="nav-history" onclick="switchTab('history')">
+    <span class="nav-btn-icon">🕐</span>
+    <span class="nav-btn-label" id="nav-history-label">历史</span>
+  </button>
+</div>
+
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const DBS_CORE = `
+【dbs-content 五维诊断标准 · 原文】
+维度1 文字洁癖：有没有AI味（Emoji堆叠、晦涩词汇、空洞排比句）；有没有「干货」陷阱；语言是否公共可验证。
+维度2 认知劫持力：开头能让人停下来吗？平铺直叙 = 价值密度不够。
+维度3 表达效率：能一句话说清楚核心观点吗？有没有用99%时间包装1%内容？
+维度4 认知落差：同行把这个事情讲清楚了吗？受众会不会觉得「这个我知道」？
+维度5 语言洁净度：每个词都有明确含义，没有伪概念。
+【dbs-diagnosis 公理】
+公理1 商业模式是客观存在，人只是喂料员。要对大佬祛魅，对商业模式保持敬畏。
+公理4 流量不等于收入。99%的情况下，流量越大越不赚钱。
+公理5 定价即产品。引流款和利润款价格差最好10倍。
+公理6 99%的创业问题是心理问题。
+【dbs-deconstruct 语言审查】
+去掉某个词，用大白话还能说清楚吗？能→这个词是包装。
+把「赛道/行业/底层逻辑/认知升级/赋能」从内容里删掉。
+【反模式】正确废话/成功学归因/干货陷阱/无立场总结——一律禁止。
+【绝对禁止句式】
+「不是……而是……」「……其实……」「以为……实际上……」
+「表面上……实际上……」「看似……实则……」「很多人觉得……但其实……」
+「值得注意的是」「不得不说」「总的来说」「可以说」
+正确做法：有观点直接说，不用任何句式引出。
+`;
+
+const PERSONAS = {
+  business: {
+    label: "商业创业",
+    system: `你是用dontbesilent方法论写X平台内容的创作者。文风接近《晚点LatePost》，但更口语有锋芒。
+说话风格：直接到刺痛，短句为主，不给鸡汤，每句话有立场。
+${DBS_CORE}
+硬禁止词：以为/其实/不是/而是/值得注意/不得不说/总的来说/赋能/生态/闭环/底层逻辑/认知升级/颠覆/赛道/行业/破局/干货
+硬禁止句式：「不是A，而是B」「以为X，其实Y」「表面上X，实际上Y」「很多人觉得X，但其实Y」「看似X，实则Y」
+有观点直接说，不用任何引出句式。不写没有来源的数据，宁可不写数字也不编数字。`
+  },
+  ai: {
+    label: "科技 AI",
+    system: `你是用dontbesilent方法论写X平台科技内容的记者型创作者。
+用dbs-deconstruct的方式看AI话题：先把概念拆清楚再写。
+${DBS_CORE}
+硬禁止词：颠覆/革命性/划时代/赋能/生态/以为/其实/不是/而是/不得不说/总的来说/底层逻辑/认知升级
+硬禁止句式：「不是A，而是B」「以为X，其实Y」「表面上X，实际上Y」「看似X，实则Y」
+有观点直接说，不用任何引出句式。不写没有来源的数据，对「最新」「第一」保持怀疑。`
+  },
+  growth: {
+    label: "个人成长",
+    system: `你是用dontbesilent方法论写X平台个人成长内容的创作者。
+用dbs-unblock的阿德勒框架：「想做」的意思就是不想做，「正在做」才是想做。
+${DBS_CORE}
+硬禁止词：成为更好的自己/在人生旅途中/认知升级/底层逻辑/赋能/以为/其实/不是/而是/总的来说/干货/加油/相信自己
+硬禁止句式：「不是A，而是B」「以为X，其实Y」「表面上X，实际上Y」「很多人觉得X，但其实Y」
+有观点直接说，不用任何引出句式。只写具体场景和具体感受，结尾不总结升华。`
+  },
+  relationship: {
+    label: "情感关系",
+    system: `你是一个在感情上吃过亏、看过很多事的普通人，在X平台写情感内容。
+你说话的感觉：像跟朋友坐着喝咖啡，顺口聊起一件事，说完对方会说「对啊对啊就是这样」。
+口语，自然，不端着，从具体生活细节切入，结尾收得随意，不升华不总结。
+${DBS_CORE}
+硬禁止词：灵魂伴侣/另一半/缘分/真爱/珍惜/以为/其实/不是/而是/总的来说/感同身受/治愈/认知升级
+硬禁止句式：「不是A，而是B」「以为X，其实Y」「表面上X，实际上Y」「很多人觉得X，但其实Y」
+有话直说，不用任何引出句式。不写鸡汤，不卖焦虑。`
+  }
+};
+
+const LENGTHS = [
+  { id: "short",  label: "短文",   range: "60–100字",  min: 60,  max: 100 },
+  { id: "medium", label: "中短文", range: "120–200字", min: 120, max: 200 },
+  { id: "long",   label: "长文",   range: "300–500字", min: 300, max: 500 },
+];
+
+const MODELS = [
+  { id: "claude-opus-4-6",            label: "Opus 4.6",   desc: "最强" },
+  { id: "claude-sonnet-4-6",          label: "Sonnet 4.6", desc: "均衡" },
+  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5", desc: "对比" },
+];
+
+const TOPIC_POOLS = {
+  business: ["冷启动怎么找第一批用户","定价怎么定才不亏","合伙人要不要签协议","要不要辞职创业","为什么大部分创业公司死在B轮","天使轮估值怎么谈","订阅制为什么难做","免费增值模式的坑","to B和to C哪个更好赚钱","私域流量的本质是什么","知识付费还能做吗","小红书开店值不值","抖音投流ROI多少算正常","直播卖货的真实成本","为什么大公司抄小公司总是抄死","出海东南亚靠谱吗","现金流比利润重要吗","股权怎么分才合理","期权池给多少合适","第一个员工怎么招","怎么留住核心员工","创始人要不要亲自做销售","餐饮业的净利润到底多少","便利店加盟的真实数字","奶茶店为什么一直开","新消费品牌怎么起量","独立设计师怎么定价","自媒体接广告怎么报价","加盟陷阱怎么识别","细分市场比大市场好做吗"],
+  ai: ["GPT和Claude谁更适合写中文","大模型的上下文窗口有多重要","为什么RAG比微调更常用","Agent真的能自主完成任务吗","开源模型和闭源模型的差距缩小了吗","Cursor和Copilot哪个更好用","AI写代码能替代初级程序员吗","AI视频生成有多快","AI搜索会取代Google吗","企业用AI最多的场景是什么","提示词工程还重要吗","哪些工作最先被AI取代","程序员还值得学吗","设计师要怎么和AI协作","AI时代什么技能更值钱","用AI提效的人和不用的人差距有多大","为什么中国大模型追不上","AI创业现在还有机会吗","AI独立开发者能赚到钱吗","怎么让AI输出更有人味","AI幻觉问题有多严重","每天用AI工作省了多少时间"],
+  growth: ["第一份工作选大公司还是小公司","跳槽的最佳时机是什么时候","涨薪谈判怎么开口","被裁员之后第一件事做什么","职场PUA怎么识别","要不要考研考公","副业要不要告诉公司","35岁职场危机是真的吗","番茄工作法真的有用吗","手机成瘾怎么戒","早起有没有用","休息比努力更难","月薪多少才够用","年轻人要不要买房","消费降级是主动还是被迫","怎么戒掉冲动消费","刷了很多课为什么没有进步","读书有没有用","学了就忘怎么办","知道做不到是什么病","焦虑是怎么来的","为什么越努力越累","完美主义是优点还是缺点","如何接受自己的平庸","为什么总是拖延"],
+  relationship: ["为什么喜欢一个人会让人变蠢","追求期间该不该主动","暧昧期为什么让人痛苦","怎么判断对方是否喜欢你","相亲成功率有多低","异地恋真的能成吗","吵架之后谁先道歉","为什么越亲密越挑剔","恋爱中的边界感怎么保持","两个人要不要AA制","分手后为什么总想联系对方","怎么判断该不该挽回","复合成功率有多低","走出一段感情需要多长时间","分手后还能做朋友吗","婚前要不要同居","婚姻里的激情会消失吗","婚姻里的金钱要怎么管","朋友关系会随年龄变淡吗","怎么处理有毒的友谊","原生家庭的影响能摆脱吗","和父母的边界感怎么建立","孤独感和独处的区别"]
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let state = {
+  topic: "business",
+  length: "short",
+  model: "claude-sonnet-4-6",
+  keyword: "",
+  draft: "",
+  running: false,
+  history: [],
+  currentTab: "write",
+  confirmClear: false,
+};
+
+const STORAGE_KEY = "xwriter_v4";
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  // Date
+  document.getElementById("header-sub").textContent =
+    new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" }) + " · dbskill v2";
+
+  // Load API key
+  const savedKey = localStorage.getItem("xwriter_apikey") || "";
+  document.getElementById("apikey-input").value = savedKey;
+  document.getElementById("apikey-input").addEventListener("input", e => {
+    localStorage.setItem("xwriter_apikey", e.target.value.trim());
+  });
+
+  // Load history
+  try {
+    const h = localStorage.getItem(STORAGE_KEY);
+    if (h) state.history = JSON.parse(h);
+  } catch(e) {}
+
+  // Render chips
+  renderChips("topic-chips", Object.entries(PERSONAS).map(([id, p]) => ({ id, label: p.label })), "topic");
+  renderChips("length-chips", LENGTHS.map(l => ({ id: l.id, label: l.label, sub: l.range })), "length");
+  renderChips("model-chips", MODELS.map(m => ({ id: m.id, label: m.label, sub: m.desc })), "model");
+
+  // Keyword enter
+  document.getElementById("keyword-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") run(false);
+  });
+
+  // Buttons
+  document.getElementById("btn-generate").addEventListener("click", () => run(false));
+  document.getElementById("btn-random").addEventListener("click", () => run(true));
+  document.getElementById("btn-copy").addEventListener("click", handleCopy);
+  document.getElementById("btn-post-x").addEventListener("click", () => openX(state.draft));
+  document.getElementById("btn-regen").addEventListener("click", () => run(false));
+  document.getElementById("btn-clear").addEventListener("click", handleClear);
+
+  updateHistoryUI();
+  updateHeaderCount();
+});
+
+// ─── Chips ────────────────────────────────────────────────────────────────────
+function renderChips(containerId, items, stateKey) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = "";
+  items.forEach(item => {
+    const btn = document.createElement("button");
+    btn.className = "chip" + (state[stateKey] === item.id ? " active" : "");
+    btn.innerHTML = item.label + (item.sub ? '<span class="chip-sub">' + item.sub + '</span>' : "");
+    btn.addEventListener("click", () => {
+      state[stateKey] = item.id;
+      renderChips(containerId, items, stateKey);
+    });
+    container.appendChild(btn);
+  });
+}
+
+// ─── API ──────────────────────────────────────────────────────────────────────
+async function run(isRandom) {
+  if (state.running) return;
+
+  const apiKey = (document.getElementById("apikey-input").value || "").trim();
+  if (!apiKey) {
+    showError("请先输入 Anthropic API Key");
+    return;
+  }
+
+  state.running = true;
+  state.keyword = document.getElementById("keyword-input").value.trim();
+
+  setUIRunning(true);
+
+  try {
+    const persona = PERSONAS[state.topic];
+    const text = await callAPI(apiKey, persona.system, buildPrompt(isRandom), state.model);
+    state.draft = text;
+    showDraft(text, isRandom);
+    saveToHistory(text, isRandom);
+  } catch(e) {
+    showError(e.message || "生成失败，请重试");
+  } finally {
+    state.running = false;
+    setUIRunning(false);
+  }
+}
+
+async function callAPI(apiKey, system, prompt, model) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "anthropic-version": "2023-06-01",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 2048,
+      system: system,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
+  if (!text) throw new Error("返回内容为空，请重试");
+  return text;
+}
+
+function buildPrompt(isRandom) {
+  const len = LENGTHS.find(l => l.id === state.length);
+  const d = new Date();
+  const dateStr = d.getFullYear() + "年" + (d.getMonth()+1) + "月" + d.getDate() + "日";
+  const pool = TOPIC_POOLS[state.topic] || TOPIC_POOLS.business;
+  const autoTopic = pool[Math.floor(Math.random() * pool.length)];
+  const focus = (state.keyword && !isRandom)
+    ? "今天是" + dateStr + "。围绕「" + state.keyword + "」写，但不要把关键词硬塞进去。"
+    : "今天是" + dateStr + "。围绕「" + autoTopic + "」这个话题写。";
+  const fmt = state.length === "short" ? "1–2段，每段2–3句，句子短，节奏紧。"
+    : state.length === "medium" ? "2–3段，段落间空一行。"
+    : "4–6段，段落间空一行，有展开有层次，每段不超过4句。";
+  return focus + "\n写一段适合发X平台的中文短文，" + len.range + "。\n"
+    + "dbs五维要求：无AI味、开头有认知劫持力、一句话说清核心观点、有认知落差、无伪概念。\n"
+    + "格式：直接输出正文，不加标题和任何说明。" + fmt + "不用emoji，不用hashtag，结尾干净不升华。\n"
+    + "数据核实：不确定的数字/事件一律删除或模糊处理，绝不捏造。\n"
+    + "⛔ 以下句式禁止：「不是/而是」「其实」「以为」「表面上」「看似」「实则」「很多人觉得」。直接说观点。";
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function setUIRunning(running) {
+  const btn = document.getElementById("btn-generate");
+  const loading = document.getElementById("loading-box");
+  const errBox = document.getElementById("error-box");
+  btn.disabled = running;
+  document.getElementById("btn-random").disabled = running;
+  document.getElementById("btn-regen").disabled = running;
+  loading.style.display = running ? "flex" : "none";
+  if (running) errBox.style.display = "none";
+
+  // Status pill
+  const pill = document.getElementById("status-pill");
+  if (running) {
+    pill.style.display = "flex";
+    pill.style.background = "#4A90D915";
+    pill.style.border = "1px solid #4A90D935";
+    pill.style.color = "#4A90D9";
+    pill.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#4A90D9;animation:pulse 1.2s ease infinite"></div> 写稿中…';
+    btn.innerHTML = '<div class="spinner"></div> 写稿中…';
+  } else {
+    pill.style.display = "none";
+    btn.innerHTML = "生成内容";
+  }
+}
+
+function showError(msg) {
+  const box = document.getElementById("error-box");
+  box.style.display = "block";
+  box.textContent = "⚠ " + msg;
+  document.getElementById("loading-box").style.display = "none";
+}
+
+function showDraft(text, isRandom) {
+  const card = document.getElementById("draft-card");
+  const textEl = document.getElementById("draft-text");
+  const tagsEl = document.getElementById("draft-tags");
+  const charEl = document.getElementById("char-count");
+  const len = LENGTHS.find(l => l.id === state.length);
+
+  textEl.textContent = text;
+  card.style.display = "block";
+  document.getElementById("loading-box").style.display = "none";
+
+  // Tags
+  const accentColor = "#CC785C";
+  const blueColor = "#4A90D9";
+  const subColor = "#6B6860";
+  tagsEl.innerHTML =
+    '<span class="tag" style="background:' + accentColor + '18;color:' + accentColor + '">' + PERSONAS[state.topic].label + '</span>' +
+    '<span class="tag" style="background:' + blueColor + '18;color:' + blueColor + '">' + (len?.label||"") + '</span>' +
+    (state.keyword && !isRandom ? '<span class="tag" style="background:' + subColor + '18;color:' + subColor + '">#' + state.keyword + '</span>' : "");
+
+  // Char count
+  const count = text.replace(/\s/g, "").length;
+  const ok = count >= (len?.min||0) && count <= (len?.max||999);
+  charEl.style.color = ok ? "#4CAF7D" : "#D4882A";
+  charEl.textContent = count + " 字 " + (ok ? "✓" : "");
+  tagsEl.appendChild(charEl);
+
+  // Status pill done
+  const pill = document.getElementById("status-pill");
+  pill.style.display = "flex";
+  pill.style.background = "#4CAF7D15";
+  pill.style.border = "1px solid #4CAF7D35";
+  pill.style.color = "#4CAF7D";
+  pill.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#4CAF7D"></div> 完成';
+}
+
+function handleCopy() {
+  const btn = document.getElementById("btn-copy");
+  const fb = () => {
+    const ta = document.createElement("textarea");
+    ta.value = state.draft; ta.style.cssText = "position:fixed;top:-999px;opacity:0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand("copy"); } catch(e) {}
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(state.draft).catch(fb);
+  } else { fb(); }
+  btn.textContent = "✓ 已复制";
+  btn.classList.add("copied");
+  setTimeout(() => { btn.textContent = "复制"; btn.classList.remove("copied"); }, 2000);
+}
+
+function openX(text) {
+  window.open("https://x.com/intent/tweet?text=" + encodeURIComponent(text), "_blank", "noopener");
+}
+
+// ─── History ──────────────────────────────────────────────────────────────────
+function saveToHistory(text, isRandom) {
+  const item = {
+    id: Date.now(),
+    topic: state.topic, length: state.length, model: state.model,
+    kw: isRandom ? "" : state.keyword, text,
+    date: new Date().toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" }),
+    time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+  };
+  state.history = [item, ...state.history].slice(0, 200);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.history));
+  updateHistoryUI();
+  updateHeaderCount();
+}
+
+function updateHeaderCount() {
+  const el = document.getElementById("header-count");
+  if (state.history.length > 0) {
+    el.style.display = "inline";
+    el.textContent = "已存 " + state.history.length + " 条";
+  } else {
+    el.style.display = "none";
+  }
+  const navLabel = document.getElementById("nav-history-label");
+  navLabel.textContent = state.history.length > 0 ? "历史 · " + state.history.length : "历史";
+}
+
+function updateHistoryUI() {
+  const list = document.getElementById("history-list");
+  const empty = document.getElementById("history-empty");
+  const clearBtn = document.getElementById("btn-clear");
+  const countEl = document.getElementById("history-count");
+
+  countEl.textContent = state.history.length > 0 ? " " + state.history.length + " 条" : "";
+  clearBtn.style.display = state.history.length > 0 ? "inline-block" : "none";
+  empty.style.display = state.history.length === 0 ? "block" : "none";
+
+  list.innerHTML = "";
+  state.history.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "hist-item";
+    const personaLabel = PERSONAS[item.topic]?.label || item.topic;
+    const lengthLabel = LENGTHS.find(l => l.id === item.length)?.label || "";
+    div.innerHTML = `
+      <div class="hist-item-head">
+        <div class="hist-item-tags">
+          <span class="tag" style="background:#CC785C18;color:#CC785C">${personaLabel}</span>
+          <span class="tag" style="background:#4A90D918;color:#4A90D9">${lengthLabel}</span>
+          ${item.kw ? '<span class="tag" style="background:#6B686018;color:#6B6860">#' + item.kw + '</span>' : ""}
+        </div>
+        <span class="hist-item-time">${item.date} ${item.time}</span>
+      </div>
+      <div class="hist-item-text">${item.text}</div>
+      <div class="hist-actions">
+        <button class="hist-btn-copy">复制</button>
+        <button class="hist-btn-x">发布到 X</button>
+        <button class="hist-btn-del">×</button>
+      </div>
+    `;
+    div.querySelector(".hist-btn-copy").addEventListener("click", () => {
+      const btn = div.querySelector(".hist-btn-copy");
+      const fb = () => { const ta = document.createElement("textarea"); ta.value = item.text; ta.style.cssText = "position:fixed;top:-999px;opacity:0"; document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand("copy"); } catch(e) {} document.body.removeChild(ta); };
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(item.text).catch(fb); else fb();
+      btn.textContent = "✓"; setTimeout(() => { btn.textContent = "复制"; }, 1500);
+    });
+    div.querySelector(".hist-btn-x").addEventListener("click", () => openX(item.text));
+    div.querySelector(".hist-btn-del").addEventListener("click", () => {
+      state.history = state.history.filter(h => h.id !== item.id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.history));
+      updateHistoryUI();
+      updateHeaderCount();
+    });
+    list.appendChild(div);
+  });
+}
+
+function handleClear() {
+  if (!state.confirmClear) {
+    state.confirmClear = true;
+    const btn = document.getElementById("btn-clear");
+    btn.textContent = "再点确认清空";
+    btn.classList.add("confirm");
+    setTimeout(() => {
+      state.confirmClear = false;
+      btn.textContent = "清空";
+      btn.classList.remove("confirm");
+    }, 3000);
+    return;
+  }
+  state.confirmClear = false;
+  state.history = [];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+  updateHistoryUI();
+  updateHeaderCount();
+  document.getElementById("btn-clear").textContent = "清空";
+  document.getElementById("btn-clear").classList.remove("confirm");
+}
+
+// ─── Tab switching ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  state.currentTab = tab;
+  document.getElementById("tab-write").style.display = tab === "write" ? "block" : "none";
+  document.getElementById("tab-history").style.display = tab === "history" ? "block" : "none";
+  document.getElementById("nav-write").classList.toggle("active", tab === "write");
+  document.getElementById("nav-history").classList.toggle("active", tab === "history");
+}
+</script>
+</body>
+</html>
